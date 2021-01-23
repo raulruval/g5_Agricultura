@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <PubSubClient.h>
 #include "freertos/FreeRTOS.h"
+#include "driver/mcpwm.h"
 
 const char *ssid = "g5Net";
 const char *password = "g5IotNet";
@@ -14,9 +15,10 @@ const char *password = "g5IotNet";
 #define TOPIC "g5/sensor"
 #define BROKER_IP "192.168.1.144"
 #define BROKER_PORT 2883
+#define LIGHTSENSORPIN A1
+#define SENSORSUELO A3
 
 DHT dht(DHTPIN, DHTTYPE);
-#define LIGHTSENSORPIN A1
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -111,6 +113,8 @@ void tareaHumedadSuelo(void *param)
     {
       TickType_t xLastWakeTime = xTaskGetTickCount();
       humedadSuelo = 15.0;
+      //El sensor registra valores normales de humedad, no es necesaria conversión. Valor registrado = 33~34
+      //humedadSuelo = SENSORSUELO; Si se introduce con analogRead, obtenemos el valor en millares y decimales. Se puede utilizar si queremos se más precisos
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1000);
     }
@@ -130,6 +134,16 @@ void tareaServo(void *param)
       TickType_t xLastWakeTime = xTaskGetTickCount();
       if (temperatura > 30 || humedad < 30  ){
         printf("Accionar servo");
+        /* Movimiento del servo cada 2 segundos en diferentes ángulos
+        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2.5);
+        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 500);  //0.5ms - 0
+        delay(2000);
+        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 7.5);
+        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 1500); //1.5ms - 90
+        delay(2000);
+        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 12.5);
+        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2500); //2.5ms - 180
+        delay(2000);*/
       }
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1000);
@@ -139,7 +153,7 @@ void tareaServo(void *param)
 }
 
 /*
-  Tarea para activar el servo
+  Tarea para Enviar la información a la arquitectura
 */
 void tareaEnvio(void *param)
 {
@@ -201,6 +215,17 @@ void setup()
   delay(4000);
   wifiConnect();
   mqttConnect();
+
+  //Inicialización del servo
+  /**mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, GPIO_NUM_14);
+
+  mcpwm_config_t pwm_config;
+    pwm_config.frequency = 50;    //frequency = 50Hz, i.e. for every servo motor time period should be 20ms
+    pwm_config.cmpr_a = 0;    //duty cycle of PWMxA = 0
+    pwm_config.cmpr_b = 0;    //duty cycle of PWMxb = 0
+    pwm_config.counter_mode = MCPWM_UP_COUNTER;
+    pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
+  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);*/
 
   xMutex = xSemaphoreCreateMutex();
   if (xMutex != NULL)
