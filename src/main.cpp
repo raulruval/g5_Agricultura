@@ -6,13 +6,13 @@
 #include <PubSubClient.h>
 #include "freertos/FreeRTOS.h"
 
-const char *ssid = "g5Net";
+const char *ssid = "g5Net2";
 const char *password = "g5IotNet";
 
 #define DHTPIN D4
 #define DHTTYPE DHT11
 #define TOPIC "g5/sensor"
-#define BROKER_IP "192.168.1.144"
+#define BROKER_IP "192.168.43.78"
 #define BROKER_PORT 2883
 
 DHT dht(DHTPIN, DHTTYPE);
@@ -22,10 +22,10 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 QueueHandle_t xMutex;
 
-float temperatura;
-float humedad;
-float humedadSuelo;
-float fotoreceptor;
+float temperatura = 0.0;
+float humedad = 0.0;
+float humedadSuelo = 0.0;
+int fotoreceptor = 0.0;
 
 void IRAM_ATTR on_handleInterrupt()
 {
@@ -148,7 +148,7 @@ void tareaEnvio(void *param)
     if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
     {
       TickType_t xLastWakeTime = xTaskGetTickCount();
-      String jsonData = "{\"temperatura\":" + String(temperatura) + ",\"luz\":" + String(fotoreceptor) + ",\"humedad\":" + String(humedad) + ",\"humedadSuelo\":" + String(humedadSuelo) + "}";
+      String jsonData = "{\"temperatura\":" + String(temperatura) + ",\"fotoreceptor\":" + String(fotoreceptor) + ",\"humedad\":" + String(humedad) + ",\"humedadSuelo\":" + String(humedadSuelo) + "}";
       client.publish(TOPIC, jsonData.c_str());
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1500);
@@ -163,8 +163,6 @@ void wifiConnect()
 
   while (WiFi.status() != WL_CONNECTED)
   {
-    Serial.println("Connected to the WiFi network");
-    Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
     delay(1000);
     Serial.println("Connecting to WiFi..");
