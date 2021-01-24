@@ -27,7 +27,7 @@ QueueHandle_t xMutex;
 float temperatura = 0.0;
 float humedad = 0.0;
 float humedadSuelo = 0.0;
-int fotoreceptor = 0.0;
+float fotoreceptor = 0.0;
 
 void IRAM_ATTR on_handleInterrupt()
 {
@@ -72,6 +72,13 @@ void tareaFotoreceptor(void *param)
     {
       TickType_t xLastWakeTime = xTaskGetTickCount();
       fotoreceptor = analogRead(LIGHTSENSORPIN);
+      if (isnan(fotoreceptor))
+      {
+        Serial.println(F("Error de lectura del sensor Light A1! (Luz)"));
+        return;
+      }
+      Serial.print("\nFotoreceptor: ");
+      Serial.println(fotoreceptor);
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1000);
     }
@@ -132,7 +139,8 @@ void tareaServo(void *param)
     if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
     {
       TickType_t xLastWakeTime = xTaskGetTickCount();
-      if (temperatura > 30 || humedad < 30  ){
+      if (temperatura > 30 || humedad < 30)
+      {
         printf("Accionar servo");
         /* Movimiento del servo cada 2 segundos en diferentes ángulos
         mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2.5);
@@ -208,11 +216,14 @@ void mqttConnect()
 void setup()
 {
   // put your setup code here, to run once:
+  pinMode(LIGHTSENSORPIN, INPUT);
+  Serial.begin(9600);
   Serial.begin(115200);
   dht.begin();
   delay(4000);
   wifiConnect();
   mqttConnect();
+  analogReadResolution(1);
 
   //Inicialización del servo
   /**mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, GPIO_NUM_14);
@@ -235,7 +246,6 @@ void setup()
     xTaskCreatePinnedToCore(tareaServo, "Tarea accionador servo", 1500, NULL, 1, NULL, 0);
     xTaskCreatePinnedToCore(tareaEnvio, "Tarea para enviar", 1500, NULL, 1, NULL, 0);
   }
-
 }
 
 void loop()
