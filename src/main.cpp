@@ -6,6 +6,10 @@
 #include <PubSubClient.h>
 #include "freertos/FreeRTOS.h"
 #include "driver/mcpwm.h"
+#include <nodeRed.pb.h>
+#include <pb_common.h>
+#include <pb.h>
+#include <pb_encode.h>
 
 const char *ssid = "g5Net2";
 const char *password = "g5IotNet";
@@ -24,6 +28,7 @@ DHT dht(DHTPIN, DHTTYPE);
 WiFiClient espClient;
 PubSubClient client(espClient);
 QueueHandle_t xMutex;
+nodeRed message = nodeRed_init_zero;
 
 float temperatura = 0.0;
 float humedad = 0.0;
@@ -171,7 +176,19 @@ void tareaEnvio(void *param)
       TickType_t xLastWakeTime = xTaskGetTickCount();
       String jsonData = "{\"temperatura\":" + String(temperatura) + ",\"fotoreceptor\":" + String(fotoreceptor) + ",\"humedad\":" + String(humedad) + ",\"humedadSuelo\":" + String(humedadSuelo) + "}";
       client.publish(TOPIC, jsonData.c_str());
-      client.publish(TOPICNORERED, jsonData.c_str());
+
+      // client.publish(TOPICNORERED, jsonData.c_str());
+      message.temperatura = temperatura;
+      message.humedad = humedad;
+      message.humedadSuelo = humedadSuelo;
+      message.fotoreceptor = fotoreceptor;
+
+      uint8_t buffer[200];
+      pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+      bool status = pb_encode(&stream, nodeRed_fields, &message);
+      if (!status)
+        Serial.println("Error encode");
+      client.publish(TOPIC, buffer, stream.bytes_written);
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1500);
     }

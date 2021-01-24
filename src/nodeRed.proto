@@ -1,0 +1,8 @@
+syntax="proto2";
+
+message nodeRed{
+    optional float temperatura = 1;
+    optional float humedad = 2;
+    optional float humedadSuelo = 3;
+    optional float fotoreceptor = 4;
+}
