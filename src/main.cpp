@@ -13,6 +13,7 @@ const char *password = "g5IotNet";
 #define DHTPIN D4
 #define DHTTYPE DHT11
 #define TOPIC "g5/sensor"
+#define TOPICNORERED "g5/nodered"
 #define BROKER_IP "192.168.43.78"
 #define BROKER_PORT 2883
 #define LIGHTSENSORPIN A1
@@ -71,14 +72,12 @@ void tareaFotoreceptor(void *param)
     if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
     {
       TickType_t xLastWakeTime = xTaskGetTickCount();
-      fotoreceptor = analogRead(LIGHTSENSORPIN);
+      float fotoreceptor = analogRead(LIGHTSENSORPIN);
       if (isnan(fotoreceptor))
       {
         Serial.println(F("Error de lectura del sensor Light A1! (Luz)"));
         return;
       }
-      Serial.print("\nFotoreceptor: ");
-      Serial.println(fotoreceptor);
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1000);
     }
@@ -172,6 +171,7 @@ void tareaEnvio(void *param)
       TickType_t xLastWakeTime = xTaskGetTickCount();
       String jsonData = "{\"temperatura\":" + String(temperatura) + ",\"fotoreceptor\":" + String(fotoreceptor) + ",\"humedad\":" + String(humedad) + ",\"humedadSuelo\":" + String(humedadSuelo) + "}";
       client.publish(TOPIC, jsonData.c_str());
+      client.publish(TOPICNORERED, jsonData.c_str());
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1500);
     }
@@ -217,13 +217,10 @@ void setup()
 {
   // put your setup code here, to run once:
   pinMode(LIGHTSENSORPIN, INPUT);
-  Serial.begin(9600);
   Serial.begin(115200);
   dht.begin();
-  delay(4000);
   wifiConnect();
   mqttConnect();
-  analogReadResolution(1);
 
   //Inicialización del servo
   /**mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, GPIO_NUM_14);
