@@ -1,0 +1,37 @@
+version: '2'
+services:
+    grafana:
+        image: grafana/grafana:6.5.0-ubuntu
+        container_name: grafana
+        networks:
+         - g5
+        ports: 
+         - 3000:3000
+    influxdb:
+        image: influxdb
+        container_name: influxdb
+        restart: always
+        networks: 
+         - g5
+        ports: 
+         - 8086:8086
+    broker:
+        image: eclipse-mosquitto
+        container_name: broker
+        networks:
+         - g5
+        ports:
+         - 2883:1883
+    mynodered:
+        image: nodered/node-red
+        ports: 
+         - 1880:1880
+    telegraf:
+        image: telegraf
+        container_name: telegraf
+        networks:
+         - g5
+        volumes:
+         - /home/asus/Documents/PlatformIO/Projects/g5_Agricultura/telegraf.conf:/etc/telegraf/telegraf.conf
+networks: 
+ g5:

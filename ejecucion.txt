@@ -7,3 +7,8 @@ influxdb:   docker run -p 8086:8086 --name=influxdb --net=g5 influxdb
 broker mqtt:  docker run -p 2883:1883 --name=broker --net=g5 eclipse-mosquitto
 telegraf: docker run -v /home/asus/Documents/PlatformIO/Projects/g5_Agricultura/telegraf.conf:/etc/telegraf/telegraf.conf --net=g5 --name=telegraf telegraf
 grafana:  docker run -p 3000:3000 --name=grafana --net=g5 grafana/grafana:6.5.0-ubuntu
+
+
+
+ACTUALIZACIÓN: Ahora el siguiente comando puedes levantar todos los contenedores a la vez:  
+# docker-compose up

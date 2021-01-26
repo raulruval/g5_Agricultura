@@ -18,7 +18,7 @@ const char *password = "g5IotNet";
 #define DHTTYPE DHT11
 #define TOPIC "g5/sensor"
 #define TOPICNORERED "g5/nodered"
-#define BROKER_IP "192.168.43.78"
+#define BROKER_IP "192.168.1.144"
 #define BROKER_PORT 2883
 #define LIGHTSENSORPIN A1
 #define SENSORSUELO A3
