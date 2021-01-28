@@ -23,6 +23,7 @@ services:
         ports:
          - 2883:1883
     mynodered:
+        container_name: mynodered
         image: nodered/node-red
         ports: 
          - 1880:1880
@@ -32,6 +33,6 @@ services:
         networks:
          - g5
         volumes:
-         - /home/werselio/Documentos/prototipo/g5_Agricultura-1/telegraf.conf:/etc/telegraf/telegraf.conf
+         - /home/asus/Documents/PlatformIO/Projects/g5_Agricultura/telegraf.conf:/etc/telegraf/telegraf.conf
 networks: 
  g5:

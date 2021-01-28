@@ -10,29 +10,27 @@
 #include <pb_common.h>
 #include <pb.h>
 #include <pb_encode.h>
+#include "map"
 
-/*const char *ssid = "g5Net2";
-const char *password = "g5IotNet";*/
-
-const char *ssid = "MiFibra-2B2E";
-const char *password = "GVbYS5g5";
+const char *ssid = "g5Net3";
+const char *password = "g5IotNet";
 
 #define DHTPIN D4
 #define DHTTYPE DHT11
 #define TOPIC "g5/sensor"
-#define TOPICNORERED "g5/nodered"
-#define BROKER_IP "192.168.1.145"
+#define TOPICNODERED "g5/nodered"
+#define BROKER_IP "192.168.140.178"
 #define BROKER_PORT 2883
 #define LIGHTSENSORPIN A1
 #define SENSORSUELO A3
 #define BTN_MOTOR D2
 
 DHT dht(DHTPIN, DHTTYPE);
+std::map<String, float> Map;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
-QueueHandle_t xMutex;
-nodeRed message = nodeRed_init_zero;
+xQueueHandle queue;
 
 float temperatura = 0.0;
 float humedad = 0.0;
@@ -47,11 +45,15 @@ void IRAM_ATTR off_handleInterrupt()
 {
 }
 
-void IRAM_ATTR motor_interrupcion()
-{    
-    if (digitalRead(BTN_MOTOR) == 0){
-         Serial.println("Accionar servo");
-        /* Movimiento del servo cada 2 segundos en diferentes ángulos
+/*
+  Tarea para activar el servo
+*/
+void servo(bool activate)
+{
+  if (activate)
+  {
+    Serial.println("Accionar servo");
+    /* Movimiento del servo cada 2 segundos en diferentes ángulos
         mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2.5);
         //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 500);  //0.5ms - 0
         delay(2000);
@@ -61,8 +63,20 @@ void IRAM_ATTR motor_interrupcion()
         mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 12.5);
         //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2500); //2.5ms - 180
         delay(2000);*/
-    }
-} 
+  }
+  else
+  {
+    Serial.println("Parar servo");
+  }
+}
+
+void IRAM_ATTR motor_interrupcion()
+{
+  if (digitalRead(BTN_MOTOR) == 0)
+  {
+    servo(true);
+  }
+}
 
 /*
   Tarea para la lectura de la temperatura global y escogida y arrancado de termostato
@@ -71,20 +85,9 @@ void tareaTemperatura(void *param)
 {
   for (;;)
   {
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
-    {
-      TickType_t xLastWakeTime = xTaskGetTickCount();
-      float t = dht.readTemperature();
-      if (isnan(t))
-      {
-        Serial.println(F("Error de lectura del sensor DHT!"));
-        //return;
-      }
-      else
-        temperatura=t;   
-      xSemaphoreGive(xMutex);
-      vTaskDelayUntil(&xLastWakeTime, 1000);
-    }
+    Map["t"] = dht.readTemperature();
+    xQueueSend(queue, (void *)&Map, (TickType_t)0);
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
   }
   vTaskDelete(NULL);
 }
@@ -96,22 +99,12 @@ void tareaFotoreceptor(void *param)
 {
   for (;;)
   {
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
-    {
-      TickType_t xLastWakeTime = xTaskGetTickCount();
-      float fotoreceptor = analogRead(LIGHTSENSORPIN);
-      if (isnan(fotoreceptor))
-      {
-        Serial.println(F("Error de lectura del sensor Light A1! (Luz)"));
-        return;
-      }
-      xSemaphoreGive(xMutex);
-      vTaskDelayUntil(&xLastWakeTime, 1000);
-    }
+    Map["f"] = analogRead(LIGHTSENSORPIN);
+    xQueueSend(queue, (void *)&Map, (TickType_t)0);
+    vTaskDelay(3000 / portTICK_PERIOD_MS);
   }
   vTaskDelete(NULL);
 }
-
 /*
   Tarea para la lectura de la humedad ambiente
 */
@@ -119,20 +112,9 @@ void tareaHumedad(void *param)
 {
   for (;;)
   {
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
-    {
-      TickType_t xLastWakeTime = xTaskGetTickCount();
-      float h = dht.readHumidity();
-      if (isnan(h))
-      {
-        Serial.println(F("Error de lectura del sensor DHT1!"));
-        //return;
-      }
-      else 
-        humedad=h;
-      xSemaphoreGive(xMutex);
-      vTaskDelayUntil(&xLastWakeTime, 1000);
-    }
+    Map["h"] = dht.readHumidity();
+    xQueueSend(queue, (void *)&Map, (TickType_t)0);
+    vTaskDelay(6000 / portTICK_PERIOD_MS);
   }
   vTaskDelete(NULL);
 }
@@ -144,46 +126,11 @@ void tareaHumedadSuelo(void *param)
 {
   for (;;)
   {
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
-    {
-      TickType_t xLastWakeTime = xTaskGetTickCount();
-      humedadSuelo = 15.0;
-      //El sensor registra valores normales de humedad, no es necesaria conversión. Valor registrado = 33~34
-      //humedadSuelo = SENSORSUELO; Si se introduce con analogRead, obtenemos el valor en millares y decimales. Se puede utilizar si queremos se más precisos
-      xSemaphoreGive(xMutex);
-      vTaskDelayUntil(&xLastWakeTime, 1000);
-    }
-  }
-  vTaskDelete(NULL);
-}
-
-/*
-  Tarea para activar el servo
-*/
-void tareaServo(void *param)
-{
-  for (;;)
-  {
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
-    {
-      TickType_t xLastWakeTime = xTaskGetTickCount();
-      if (temperatura > 30 || humedad < 30)
-      {
-        Serial.println("Accionar servo");
-        /* Movimiento del servo cada 2 segundos en diferentes ángulos
-        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2.5);
-        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 500);  //0.5ms - 0
-        delay(2000);
-        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 7.5);
-        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 1500); //1.5ms - 90
-        delay(2000);
-        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 12.5);
-        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2500); //2.5ms - 180
-        delay(2000);*/
-      }
-      xSemaphoreGive(xMutex);
-      vTaskDelayUntil(&xLastWakeTime, 1000);
-    }
+    Map["hs"] = 15.0;
+    //El sensor registra valores normales de humedad, no es necesaria conversión. Valor registrado = 33~34
+    //humedadSuelo = SENSORSUELO; Si se introduce con analogRead, obtenemos el valor en millares y decimales. Se puede utilizar si queremos se más precisos
+    xQueueSend(queue, (void *)&Map, (TickType_t)0);
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
   }
   vTaskDelete(NULL);
 }
@@ -195,27 +142,30 @@ void tareaEnvio(void *param)
 {
   for (;;)
   {
-    if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
-    {
-      TickType_t xLastWakeTime = xTaskGetTickCount();
-      String jsonData = "{\"temperatura\":" + String(temperatura) + ",\"fotoreceptor\":" + String(fotoreceptor) + ",\"humedad\":" + String(humedad) + ",\"humedadSuelo\":" + String(humedadSuelo) + "}";
-      client.publish(TOPIC, jsonData.c_str());
+    xQueueReceive(queue, &Map, (TickType_t)(1000 / portTICK_PERIOD_MS));
+    String jsonData = "{\"temperatura\":" + String(Map["t"]) + ",\"fotoreceptor\":" + String(Map["f"]) + ",\"humedad\":" + String(Map["h"]) + ",\"humedadSuelo\":" + String(Map["hs"]) + "}";
+    Serial.printf("\nEnviando información...");
+    
+    client.publish(TOPIC, jsonData.c_str());
 
-       client.publish(TOPICNORERED, jsonData.c_str());
-      /*message.temperatura = temperatura;
-      message.humedad = humedad;
-      message.humedadSuelo = humedadSuelo;
-      message.fotoreceptor = fotoreceptor;
+    // client.publish(TOPICNORERED, jsonData.c_str());
+    nodeRed message = nodeRed_init_zero;
+    message.temperatura = Map["t"];
+    message.humedad = Map["h"];
+    message.humedadSuelo = Map["hs"];
+    message.fotoreceptor = Map["f"];
+    message.has_temperatura = true;
+    message.has_humedad = true;
+    message.has_humedadSuelo = true;
+    message.has_fotoreceptor = true;
 
-      uint8_t buffer[200];
-      pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-      bool status = pb_encode(&stream, nodeRed_fields, &message);
-      if (!status)
-        Serial.println("Error encode");
-      client.publish(TOPIC, buffer, stream.bytes_written);*/
-      xSemaphoreGive(xMutex);
-      vTaskDelayUntil(&xLastWakeTime, 1500);
-    }
+    uint8_t buffer[200];
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    bool status = pb_encode(&stream, nodeRed_fields, &message);
+    if (!status)
+      Serial.println("Error encode");
+    client.publish(TOPICNODERED, buffer, stream.bytes_written);
+    vTaskDelay(7000 / portTICK_PERIOD_MS);
   }
   vTaskDelete(NULL);
 }
@@ -223,7 +173,6 @@ void tareaEnvio(void *param)
 void wifiConnect()
 {
   WiFi.begin(ssid, password);
-
   while (WiFi.status() != WL_CONNECTED)
   {
     Serial.println(WiFi.localIP());
@@ -248,8 +197,7 @@ void mqttConnect()
       Serial.print("failed, status code =");
       Serial.print(client.state());
       Serial.println("try again in 5 seconds");
-
-      delay(5000); //* Wait 5 seconds before retrying
+      delay(5000);
     }
   }
 }
@@ -276,15 +224,14 @@ void setup()
     pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
   mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);*/
 
-  xMutex = xSemaphoreCreateMutex();
-  if (xMutex != NULL)
+  queue = xQueueCreate(10, sizeof(Map));
+  if (queue != NULL)
   {
-    xTaskCreatePinnedToCore(tareaTemperatura, "Tarea lectura temperatura", 1500, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(tareaFotoreceptor, "Tarea lectura luz", 1500, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(tareaHumedad, "Tarea lectura humedad", 1500, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(tareaHumedadSuelo, "Tarea lectura humedad del suelo", 1500, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(tareaServo, "Tarea accionador servo", 1500, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(tareaEnvio, "Tarea para enviar", 1500, NULL, 1, NULL, 0);
+    xTaskCreate(tareaTemperatura, "Tarea lectura temperatura", CONFIG_SYSTEM_EVENT_TASK_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(tareaFotoreceptor, "Tarea lectura luz", CONFIG_SYSTEM_EVENT_TASK_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(tareaHumedad, "Tarea lectura humedad", CONFIG_SYSTEM_EVENT_TASK_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(tareaHumedadSuelo, "Tarea lectura humedad del suelo", CONFIG_SYSTEM_EVENT_TASK_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(tareaEnvio, "Tarea para enviar", CONFIG_SYSTEM_EVENT_TASK_STACK_SIZE, NULL, 5, NULL);
   }
 }
 
