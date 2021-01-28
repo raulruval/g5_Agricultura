@@ -32,6 +32,6 @@ services:
         networks:
          - g5
         volumes:
-         - /home/asus/Documents/PlatformIO/Projects/g5_Agricultura/telegraf.conf:/etc/telegraf/telegraf.conf
+         - /home/werselio/Documentos/prototipo/g5_Agricultura-1/telegraf.conf:/etc/telegraf/telegraf.conf
 networks: 
  g5:

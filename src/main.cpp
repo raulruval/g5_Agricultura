@@ -11,17 +11,21 @@
 #include <pb.h>
 #include <pb_encode.h>
 
-const char *ssid = "g5Net2";
-const char *password = "g5IotNet";
+/*const char *ssid = "g5Net2";
+const char *password = "g5IotNet";*/
+
+const char *ssid = "MiFibra-2B2E";
+const char *password = "GVbYS5g5";
 
 #define DHTPIN D4
 #define DHTTYPE DHT11
 #define TOPIC "g5/sensor"
 #define TOPICNORERED "g5/nodered"
-#define BROKER_IP "192.168.1.144"
+#define BROKER_IP "192.168.1.145"
 #define BROKER_PORT 2883
 #define LIGHTSENSORPIN A1
 #define SENSORSUELO A3
+#define BTN_MOTOR D2
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -43,6 +47,23 @@ void IRAM_ATTR off_handleInterrupt()
 {
 }
 
+void IRAM_ATTR motor_interrupcion()
+{    
+    if (digitalRead(BTN_MOTOR) == 0){
+         Serial.println("Accionar servo");
+        /* Movimiento del servo cada 2 segundos en diferentes ángulos
+        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2.5);
+        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 500);  //0.5ms - 0
+        delay(2000);
+        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 7.5);
+        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 1500); //1.5ms - 90
+        delay(2000);
+        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 12.5);
+        //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2500); //2.5ms - 180
+        delay(2000);*/
+    }
+} 
+
 /*
   Tarea para la lectura de la temperatura global y escogida y arrancado de termostato
 */
@@ -53,13 +74,14 @@ void tareaTemperatura(void *param)
     if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
     {
       TickType_t xLastWakeTime = xTaskGetTickCount();
-      temperatura = dht.readTemperature();
-      if (isnan(temperatura))
+      float t = dht.readTemperature();
+      if (isnan(t))
       {
         Serial.println(F("Error de lectura del sensor DHT!"));
-        return;
+        //return;
       }
-
+      else
+        temperatura=t;   
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1000);
     }
@@ -100,12 +122,14 @@ void tareaHumedad(void *param)
     if (xSemaphoreTake(xMutex, portMAX_DELAY) == pdTRUE)
     {
       TickType_t xLastWakeTime = xTaskGetTickCount();
-      humedad = dht.readHumidity();
-      if (isnan(humedad))
+      float h = dht.readHumidity();
+      if (isnan(h))
       {
-        Serial.println(F("Error de lectura del sensor DHT!"));
-        return;
+        Serial.println(F("Error de lectura del sensor DHT1!"));
+        //return;
       }
+      else 
+        humedad=h;
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1000);
     }
@@ -145,7 +169,7 @@ void tareaServo(void *param)
       TickType_t xLastWakeTime = xTaskGetTickCount();
       if (temperatura > 30 || humedad < 30)
       {
-        printf("Accionar servo");
+        Serial.println("Accionar servo");
         /* Movimiento del servo cada 2 segundos en diferentes ángulos
         mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2.5);
         //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 500);  //0.5ms - 0
@@ -177,8 +201,8 @@ void tareaEnvio(void *param)
       String jsonData = "{\"temperatura\":" + String(temperatura) + ",\"fotoreceptor\":" + String(fotoreceptor) + ",\"humedad\":" + String(humedad) + ",\"humedadSuelo\":" + String(humedadSuelo) + "}";
       client.publish(TOPIC, jsonData.c_str());
 
-      // client.publish(TOPICNORERED, jsonData.c_str());
-      message.temperatura = temperatura;
+       client.publish(TOPICNORERED, jsonData.c_str());
+      /*message.temperatura = temperatura;
       message.humedad = humedad;
       message.humedadSuelo = humedadSuelo;
       message.fotoreceptor = fotoreceptor;
@@ -188,7 +212,7 @@ void tareaEnvio(void *param)
       bool status = pb_encode(&stream, nodeRed_fields, &message);
       if (!status)
         Serial.println("Error encode");
-      client.publish(TOPIC, buffer, stream.bytes_written);
+      client.publish(TOPIC, buffer, stream.bytes_written);*/
       xSemaphoreGive(xMutex);
       vTaskDelayUntil(&xLastWakeTime, 1500);
     }
@@ -234,6 +258,8 @@ void setup()
 {
   // put your setup code here, to run once:
   pinMode(LIGHTSENSORPIN, INPUT);
+  pinMode(BTN_MOTOR, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BTN_MOTOR), &motor_interrupcion, FALLING);
   Serial.begin(115200);
   dht.begin();
   wifiConnect();
