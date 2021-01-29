@@ -1,1 +1,0 @@
-[{"id":"67a9d07f.f85d08","type":"decode","z":"1ffe6c2b.8e2eac","name":"protobuf decoder","protofile":"e759e205.80db5","protoType":"","x":430,"y":220,"wires":[["4ba8f337.4ea8ec","5330ec0.54e9014"]]},{"id":"e759e205.80db5","type":"protobuf-file","protopath":"/data/nodeRed.proto","watchFile":true}]
