@@ -46,6 +46,8 @@ float humedad = 0.0;
 float humedadSuelo = 0.0;
 float fotoreceptor = 0.0;
 volatile int interruptCounter;
+const int seco = 3620;
+const int humedo = 1200;
 
 void IRAM_ATTR on_handleInterrupt()
 {
@@ -136,7 +138,7 @@ void tareaTemperatura(void *param)
       interruptCounter--;
       portEXIT_CRITICAL(&timerMux);
 
-      Serial.print("Ha ocurrido una interrupcion");
+      // Serial.print("Ha ocurrido una interrupcion");
       esp_deep_sleep_start();
 
     }
@@ -158,7 +160,7 @@ void tareaFotoreceptor(void *param)
       Serial.println("Desconectado");
     }
     Map["f"] = analogRead(LIGHTSENSORPIN);
-    Serial.print(Map["f"]);
+    // Serial.println(Map["f"]);
     xQueueSend(queue, (void *)&Map, (TickType_t)0);
     vTaskDelay(3000 / portTICK_PERIOD_MS);
   }
@@ -187,7 +189,19 @@ void tareaHumedadSuelo(void *param)
   {
     //Map["hs"] = 15.0;
     //El sensor registra valores normales de humedad, no es necesaria conversión. Valor registrado = 33~34
-    Map["hs"] = SENSORSUELO; //Si se introduce con analogRead, obtenemos el valor en millares y decimales. Se puede utilizar si queremos se más precisos
+
+    // analogRead(Map["hs"]);
+    float valorHumedad = analogRead(SENSORSUELO);
+    int porcentajeHumedadSuelo = map(valorHumedad, humedo, seco, 100, 0);
+    if (porcentajeHumedadSuelo > 100) {
+      porcentajeHumedadSuelo = 100;
+    } else if (porcentajeHumedadSuelo < 0) {
+      porcentajeHumedadSuelo = 0;
+    }
+    Serial.print(porcentajeHumedadSuelo);
+    Serial.println("%");
+
+    Map["hs"] = porcentajeHumedadSuelo; //Si se introduce con analogRead, obtenemos el valor en millares y decimales. Se puede utilizar si queremos se más precisos
     xQueueSend(queue, (void *)&Map, (TickType_t)0);
     vTaskDelay(5000 / portTICK_PERIOD_MS);
   }
@@ -204,7 +218,7 @@ void tareaEnvio(void *param)
     
     xQueueReceive(queue, &Map, (TickType_t)(1000 / portTICK_PERIOD_MS));
     String jsonData = "{\"temperatura\":" + String(Map["t"]) + ",\"fotoreceptor\":" + String(Map["f"]) + ",\"humedad\":" + String(Map["h"]) + ",\"humedadSuelo\":" + String(Map["hs"]) + "}";
-    Serial.printf("\nEnviando información...");
+    // Serial.printf("\nEnviando información...");
     
     wifiConnect();
     mqttConnect();
@@ -263,11 +277,11 @@ void setup()
     pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
   mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);
 
-  esp_sleep_enable_timer_wakeup(10*1000000); //10 segundos
+  esp_sleep_enable_timer_wakeup(10*1000000000); //10 segundos
   
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &onTimer, true);
-  timerAlarmWrite(timer, 10000000, true);
+  timerAlarmWrite(timer, 1000000000, true);
   timerAlarmEnable(timer);
 
   wifiDisconnect();
