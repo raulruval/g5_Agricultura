@@ -14,11 +14,12 @@
 #include <esp_wifi.h>
 #include "driver/timer.h"
 #include <soc/sens_reg.h>
+#include <driver/adc.h>
 
-const char *ssid = "g5Net3";
+const char *ssid = "g5Net2";
 const char *password = "g5IotNet";
 
-#define BROKER_IP "192.168.43.78"
+#define BROKER_IP "192.168.18.47"
 #define BROKER_PORT 2883
 
 #define DHTPIN D4
@@ -26,9 +27,8 @@ const char *password = "g5IotNet";
 #define TOPIC "g5/sensor"
 #define TOPICNODERED "g5/nodered"
 #define LIGHTSENSORPIN A1
-#define SENSORSUELO A3
+//#define SENSORSUELO A3
 #define BTN_MOTOR D2
-#define BTN_DESPERTAR D3
 
 DHT dht(DHTPIN, DHTTYPE);
 std::map<String, float> Map;
@@ -42,9 +42,9 @@ xQueueHandle queue;
 hw_timer_t *timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
-float medTemp = 0;
-float medHumd = 0;
-float medSoilHumd = 0;
+float medTemp;
+float medHumd;
+float medSoilHumd;
 volatile int interruptCounter;
 const int seco = 3620;
 const int humedo = 1200;
@@ -62,7 +62,6 @@ void wifiConnect()
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
   {
-    Serial.println(WiFi.localIP());
     delay(1000);
     Serial.println("Connecting to WiFi..");
   }
@@ -97,14 +96,14 @@ void servo()
   Serial.println("Accionar servo");
   //Movimiento del servo cada 2 segundos en diferentes ángulos
   mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2.5);
-  //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 500);  //0.5ms - 0
   delay(2000);
   mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 7.5);
-  //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 1500); //1.5ms - 90
   delay(2000);
   mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 12.5);
-  //mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2500); //2.5ms - 180
   delay(2000);
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 0.0);
+  //gpio_reset_pin(GPIO_NUM_14);
+
 }
 
 void IRAM_ATTR onTimer()
@@ -134,7 +133,6 @@ void tareaTemperatura(void *param)
       portENTER_CRITICAL(&timerMux);
       interruptCounter--;
       portEXIT_CRITICAL(&timerMux);
-      // Serial.print("Ha ocurrido una interrupcion");
       esp_deep_sleep_start();
     }
     float actualTemp = dht.readTemperature();
@@ -170,7 +168,6 @@ void tareaFotoreceptor(void *param)
       Serial.println("Desconectado");
     }
     Map["f"] = analogRead(LIGHTSENSORPIN);
-    // Serial.println(Map["f"]);
     xQueueSend(queue, (void *)&Map, (TickType_t)0);
     vTaskDelay(4000 / portTICK_PERIOD_MS);
   }
@@ -213,10 +210,11 @@ void tareaHumedadSuelo(void *param)
     //El sensor registra valores normales de humedad, no es necesaria conversión. Valor registrado = 33~34
 
     // analogRead(Map["hs"]);
-    float actualSoilHumidity = analogRead(SENSORSUELO);
+    float actualSoilHumidity = adc1_get_raw(ADC1_CHANNEL_6);
+    int porcentajeHumedadSuelo = map(actualSoilHumidity, humedo, seco, 100, 0);
     if (!isnan(actualSoilHumidity) && actualSoilHumidity != 0)
     {
-      int porcentajeHumedadSuelo = map(actualSoilHumidity, humedo, seco, 100, 0);
+      Serial.println(porcentajeHumedadSuelo);
       if (porcentajeHumedadSuelo > 100)
       {
         porcentajeHumedadSuelo = 100;
@@ -234,10 +232,8 @@ void tareaHumedadSuelo(void *param)
         medSoilHumd = actualSoilHumidity;
       }
     }
-    // Serial.print(porcentajeHumedadSuelo);
-    // Serial.println("%");
 
-    Map["hs"] = medSoilHumd; //Si se introduce con analogRead, obtenemos el valor en millares y decimales. Se puede utilizar si queremos se más precisos
+    Map["s"] = (float)porcentajeHumedadSuelo; //Si se introduce con analogRead, obtenemos el valor en millares y decimales. Se puede utilizar si queremos se más precisos
     xQueueSend(queue, (void *)&Map, (TickType_t)0);
     vTaskDelay(5500 / portTICK_PERIOD_MS);
   }
@@ -258,16 +254,12 @@ void tareaEnvio(void *param)
     mqttConnect();
     delay(500);
 
-    if (Map["h"] < 30 || Map["hs"] < 30)
-    {
-      servo();
-    }
 
-    String jsonData = "{\"temperatura\":" + String(Map["t"]) + ",\"fotoreceptor\":" + String(Map["f"]) + ",\"humedad\":" + String(Map["h"]) + ",\"humedadSuelo\":" + String(Map["hs"]) + "}";
+    String jsonData = "{\"temperatura\":" + String(Map["t"]) + ",\"fotoreceptor\":" + String(Map["f"]) + ",\"humedad\":" + String(Map["h"]) + ",\"humedadSuelo\":" + String(Map["s"]) + "}";
     nodeRed message = nodeRed_init_zero;
     message.temperatura = Map["t"];
     message.humedad = Map["h"];
-    message.humedadSuelo = Map["hs"];
+    message.humedadSuelo = Map["s"];
     message.fotoreceptor = Map["f"];
     message.has_temperatura = true;
     message.has_humedad = true;
@@ -282,7 +274,13 @@ void tareaEnvio(void *param)
     Serial.printf("\nSending data...\n");
     client.publish(TOPIC, jsonData.c_str());
     client.publish(TOPICNODERED, buffer, stream.bytes_written);
-    medTemp = medHumd = medSoilHumd = 0;
+
+    if (Map["h"] < 20 || Map["s"] < 30)
+    {
+      servo();
+    }
+
+    //medTemp = medHumd = medSoilHumd = 0;
     delay(500);
     client.disconnect();
     delay(500);
@@ -297,7 +295,9 @@ void setup()
 {
   // put your setup code here, to run once:
   pinMode(LIGHTSENSORPIN, INPUT);
-  pinMode(SENSORSUELO, INPUT);
+  //Configuracion de adc para el sensor del suelo
+  adc1_config_width(ADC_WIDTH_12Bit);
+  adc1_config_channel_atten(ADC1_CHANNEL_6, ADC_ATTEN_DB_6);
   pinMode(BTN_MOTOR, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BTN_MOTOR), &motor_interrupcion, FALLING);
   Serial.begin(115200);
