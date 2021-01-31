@@ -27,7 +27,6 @@ const char *password = "g5IotNet";
 #define TOPIC "g5/sensor"
 #define TOPICNODERED "g5/nodered"
 #define LIGHTSENSORPIN A1
-//#define SENSORSUELO A3
 #define BTN_MOTOR D2
 
 DHT dht(DHTPIN, DHTTYPE);
@@ -44,7 +43,6 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 float medTemp;
 float medHumd;
-float medSoilHumd;
 volatile int interruptCounter;
 const int seco = 3620;
 const int humedo = 1200;
@@ -92,17 +90,15 @@ void mqttConnect()
 */
 void servo()
 {
-
-  Serial.println("Accionar servo");
+  Serial.print("Entro servo");
   //Movimiento del servo cada 2 segundos en diferentes ángulos
   mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2.5);
-  delay(2000);
+  delay(1000);
   mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 7.5);
-  delay(2000);
+  delay(1000);
   mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 12.5);
-  delay(2000);
+  delay(1000);
   mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 0.0);
-  //gpio_reset_pin(GPIO_NUM_14);
 
 }
 
@@ -163,10 +159,6 @@ void tareaFotoreceptor(void *param)
 {
   for (;;)
   {
-    if (WiFi.status() != WL_CONNECTED)
-    {
-      Serial.println("Desconectado");
-    }
     Map["f"] = analogRead(LIGHTSENSORPIN);
     xQueueSend(queue, (void *)&Map, (TickType_t)0);
     vTaskDelay(4000 / portTICK_PERIOD_MS);
@@ -206,15 +198,10 @@ void tareaHumedadSuelo(void *param)
 {
   for (;;)
   {
-    //Map["hs"] = 15.0;
-    //El sensor registra valores normales de humedad, no es necesaria conversión. Valor registrado = 33~34
-
-    // analogRead(Map["hs"]);
     float actualSoilHumidity = adc1_get_raw(ADC1_CHANNEL_6);
     int porcentajeHumedadSuelo = map(actualSoilHumidity, humedo, seco, 100, 0);
     if (!isnan(actualSoilHumidity) && actualSoilHumidity != 0)
     {
-      Serial.println(porcentajeHumedadSuelo);
       if (porcentajeHumedadSuelo > 100)
       {
         porcentajeHumedadSuelo = 100;
@@ -223,17 +210,8 @@ void tareaHumedadSuelo(void *param)
       {
         porcentajeHumedadSuelo = 0;
       }
-      if (medSoilHumd != 0)
-      {
-        medSoilHumd = (medSoilHumd + (float)porcentajeHumedadSuelo) / 2;
-      }
-      else
-      {
-        medSoilHumd = actualSoilHumidity;
-      }
     }
-
-    Map["s"] = (float)porcentajeHumedadSuelo; //Si se introduce con analogRead, obtenemos el valor en millares y decimales. Se puede utilizar si queremos se más precisos
+    Map["s"] = porcentajeHumedadSuelo;
     xQueueSend(queue, (void *)&Map, (TickType_t)0);
     vTaskDelay(5500 / portTICK_PERIOD_MS);
   }
@@ -253,7 +231,6 @@ void tareaEnvio(void *param)
     wifiConnect();
     mqttConnect();
     delay(500);
-
 
     String jsonData = "{\"temperatura\":" + String(Map["t"]) + ",\"fotoreceptor\":" + String(Map["f"]) + ",\"humedad\":" + String(Map["h"]) + ",\"humedadSuelo\":" + String(Map["s"]) + "}";
     nodeRed message = nodeRed_init_zero;
@@ -275,12 +252,12 @@ void tareaEnvio(void *param)
     client.publish(TOPIC, jsonData.c_str());
     client.publish(TOPICNODERED, buffer, stream.bytes_written);
 
-    if (Map["h"] < 20 || Map["s"] < 30)
+    if ((Map["h"] < 20.0 && Map["h"] > 0.0) || (Map["s"] < 30.0 && Map["s"] > 0.0))
     {
       servo();
     }
+    medHumd = medTemp = 0.0;
 
-    //medTemp = medHumd = medSoilHumd = 0;
     delay(500);
     client.disconnect();
     delay(500);
@@ -310,14 +287,14 @@ void setup()
   mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, GPIO_NUM_14);
 
   mcpwm_config_t pwm_config;
-  pwm_config.frequency = 50; //frequency = 50Hz, i.e. for every servo motor time period should be 20ms
-  pwm_config.cmpr_a = 0;     //duty cycle of PWMxA = 0
-  pwm_config.cmpr_b = 0;     //duty cycle of PWMxb = 0
+  pwm_config.frequency = 50; 
+  pwm_config.cmpr_a = 0;     
+  pwm_config.cmpr_b = 0;     
   pwm_config.counter_mode = MCPWM_UP_COUNTER;
   pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
   mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);
 
-  esp_sleep_enable_timer_wakeup(10 * 1000000000); //10 segundos
+  esp_sleep_enable_timer_wakeup(10 * 1000000000); //10000 segundos
 
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &onTimer, true);
